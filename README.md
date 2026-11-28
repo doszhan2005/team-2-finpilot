@@ -239,15 +239,30 @@ https://github.com/doszhan2005/team-2-finpilot
 
 ## 12. Тестілеу және қауіпсіздік
 
-Жобада келесі тексерулерді орындау жоспарланған:
+[![FinPilot CI](https://github.com/doszhan2005/team-2-finpilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/doszhan2005/team-2-finpilot/actions/workflows/ci.yml)
+[![Service coverage 100%](https://img.shields.io/badge/service%20coverage-100%25-brightgreen)](https://github.com/doszhan2005/team-2-finpilot/actions/runs/46165515147)
 
-- Unit Testing — жеке компоненттерді тексеру;
-- Integration Testing — Android, API және дерекқор байланысын тексеру;
-- API Testing — сервер сұраныстарын тексеру;
-- UI Testing — мобильді интерфейсті тексеру;
-- GitHub Actions — автоматты CI тексерулерін орындау;
-- Authentication және Authorization — пайдаланушылардың жүйеге кіруі мен рұқсаттарын тексеру;
-- Validation — енгізілген мәліметтердің дұрыстығын тексеру.
+Расталған CI нәтижесі (commit `e96ff45`): 40 Unit Test, 23 API Integration Test және 1 web smoke test сәтті өтті. Қазіргі service қабатының coverage-і 100% (59/59 жол); CI минимумы 60%. Coverage көрсеткіші бүкіл жүйеге емес, қазіргі service кодына қатысты.
+
+Жергілікті іске қосу:
+
+```bash
+docker compose up --build -d --wait
+```
+
+Swagger UI: http://localhost:8000/swagger.html
+
+Тесттер:
+
+```bash
+cd backend
+composer install
+php artisan test
+```
+
+Толық тест сценарийлері, coverage есебі, CI және серверлік іске қосу: [docs/TESTING.md](docs/TESTING.md).
+
+Android UI тесттері мен қашықтағы HTTPS серверде толық live demo әлі бөлек тексерілуі керек.
 
 ## 13. Жобаның орындалу мерзімі
 
