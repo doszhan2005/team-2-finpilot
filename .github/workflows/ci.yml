@@ -109,3 +109,34 @@ jobs:
             backend/build/coverage.xml
             backend/build/coverage-html/
           if-no-files-found: warn
+
+  docker-smoke:
+    name: Docker Compose startup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        run: |
+          docker compose config --quiet
+          docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
+
+      - name: Start clean local stack
+        run: docker compose up --build -d --wait --wait-timeout 180
+
+      - name: Check application health and API
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8000/up
+          curl --fail --silent --show-error http://127.0.0.1:8000/swagger.html > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Accept: application/json' http://127.0.0.1:8000/api/transactions)" = "401"
+
+      - name: Show container status on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=100
+
+      - name: Stop disposable CI stack
+        if: always()
+        run: docker compose down -v
