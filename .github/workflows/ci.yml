@@ -18,6 +18,22 @@ jobs:
     name: Laravel Build, Linter and Tests
     runs-on: ubuntu-latest
 
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: finpilot_test
+          MYSQL_USER: finpilot_test
+          MYSQL_PASSWORD: ci_only_password
+          MYSQL_ROOT_PASSWORD: ci_only_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+
     defaults:
       run:
         working-directory: backend
@@ -30,9 +46,9 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
-          extensions: mbstring, pdo, pdo_sqlite, pdo_mysql, dom, curl, zip
+          extensions: mbstring, pdo, pdo_sqlite, pdo_mysql, dom, simplexml, curl, zip
           tools: composer:v2
-          coverage: none
+          coverage: pcov
 
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist
@@ -51,8 +67,76 @@ jobs:
       - name: Run Linter
         run: vendor/bin/pint --test
 
-      - name: Run automated tests
+      - name: Unit tests and service coverage
+        run: |
+          mkdir -p build
+          vendor/bin/phpunit --testsuite=Unit --coverage-text --coverage-clover build/coverage.xml --coverage-html build/coverage-html
+
+      - name: Integration tests against MySQL
         env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: ':memory:'
-        run: php artisan test
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: finpilot_test
+          DB_USERNAME: finpilot_test
+          DB_PASSWORD: ci_only_password
+        run: vendor/bin/phpunit --testsuite=Feature
+
+      - name: Enforce service coverage minimum (60%)
+        run: |
+          php -r '
+            $report = simplexml_load_file("build/coverage.xml");
+            if ($report === false) {
+                fwrite(STDERR, "Missing or invalid coverage report.\n");
+                exit(1);
+            }
+            $metrics = $report->project->metrics;
+            $total = (int) $metrics["statements"];
+            $covered = (int) $metrics["coveredstatements"];
+            $percent = $total > 0 ? 100 * $covered / $total : 0;
+            $summary = sprintf("Service/domain line coverage: %.2f%% (%d/%d); minimum 60%%\n", $percent, $covered, $total);
+            echo $summary;
+            file_put_contents(getenv("GITHUB_STEP_SUMMARY"), $summary, FILE_APPEND);
+            exit($total > 0 && $percent >= 60 ? 0 : 1);
+          '
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-service-coverage
+          path: |
+            backend/build/coverage.xml
+            backend/build/coverage-html/
+          if-no-files-found: warn
+
+  docker-smoke:
+    name: Docker Compose startup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        run: |
+          docker compose config --quiet
+          docker compose --env-file .env.production.example -f compose.production.yaml config --quiet
+
+      - name: Start clean local stack
+        run: docker compose up --build -d --wait --wait-timeout 180
+
+      - name: Check application health and API
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8000/up
+          curl --fail --silent --show-error http://127.0.0.1:8000/swagger.html > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Accept: application/json' http://127.0.0.1:8000/api/transactions)" = "401"
+
+      - name: Show container status on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=100
+
+      - name: Stop disposable CI stack
+        if: always()
+        run: docker compose down -v

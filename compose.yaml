@@ -5,35 +5,33 @@ services:
       dockerfile: Dockerfile
     container_name: finpilot-backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:80"
     environment:
       APP_NAME: FinPilot
       APP_ENV: local
-      APP_DEBUG: "true"
+      APP_DEBUG: "false"
       APP_URL: http://localhost:8000
+      APP_KEY: ${APP_KEY:-}
+      LOG_CHANNEL: stderr
+      LOG_STDERR_FORMATTER: 'Monolog\Formatter\JsonFormatter'
+      LOG_LEVEL: info
       DB_CONNECTION: mysql
       DB_HOST: db
       DB_PORT: 3306
       DB_DATABASE: finpilot
       DB_USERNAME: finpilot
-      DB_PASSWORD: finpilot_local
+      DB_PASSWORD: ${DB_PASSWORD:-finpilot_local}
+    volumes:
+      - app_storage:/var/www/html/storage/app
     depends_on:
       db:
         condition: service_healthy
-    command:
-      - sh
-      - -c
-      - |
-        set -e
-        if [ ! -f .env ]; then
-          cp .env.example .env
-          sed -i '/^DB_CONNECTION=/d; /^DB_HOST=/d; /^DB_PORT=/d; /^DB_DATABASE=/d; /^DB_USERNAME=/d; /^DB_PASSWORD=/d' .env
-          printf '\nDB_CONNECTION=%s\nDB_HOST=%s\nDB_PORT=%s\nDB_DATABASE=%s\nDB_USERNAME=%s\nDB_PASSWORD=%s\n' "$$DB_CONNECTION" "$$DB_HOST" "$$DB_PORT" "$$DB_DATABASE" "$$DB_USERNAME" "$$DB_PASSWORD" >> .env
-          php artisan key:generate
-        fi
-        php artisan config:clear
-        php artisan migrate --force
-        php artisan serve --host=0.0.0.0 --port=8000 --no-reload
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/up') === false ? 1 : 0);"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   db:
     image: mysql:8.4
@@ -42,8 +40,8 @@ services:
     environment:
       MYSQL_DATABASE: finpilot
       MYSQL_USER: finpilot
-      MYSQL_PASSWORD: finpilot_local
-      MYSQL_ROOT_PASSWORD: root_local
+      MYSQL_PASSWORD: ${DB_PASSWORD:-finpilot_local}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_local}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -55,3 +53,4 @@ services:
 
 volumes:
   mysql_data:
+  app_storage:
